@@ -1,0 +1,201 @@
+# Melos Workspace Configuration
+
+Complete `melos.yaml` for Flutter monorepo.
+Copy to workspace root and adjust package paths.
+
+```yaml
+# melos.yaml
+name: my_workspace_name
+
+sdkPath: auto   # Uses Flutter SDK from PATH (recommended for CI)
+
+packages:
+  - apps/**
+  - packages/**
+  - packages/core/**
+  - packages/features/**
+  - packages/plugins/**
+
+ignore:
+  - '**/.dart_tool/**'
+  - '**/build/**'
+  - '**/.fvm/**'
+
+# ──────────────────────────────────────────────────────────────────────────
+scripts:
+
+  # ── Bootstrap ────────────────────────────────────────────────────────────
+  bootstrap:
+    run: melos bootstrap
+    description: Install all dependencies across the workspace
+
+  clean:
+    run: melos exec --concurrency=5 -- flutter clean
+    description: Clean all packages
+
+  # ── Quality ──────────────────────────────────────────────────────────────
+  analyze:
+    run: dart analyze --fatal-infos .
+    exec:
+      concurrency: 5
+      failFast: false
+    description: Analyze all packages
+
+  format:
+    run: dart format . --fix
+    exec:
+      concurrency: 5
+
+  format:check:
+    run: dart format . --check
+    exec:
+      concurrency: 5
+
+  lint:
+    run: melos run analyze && melos run format:check
+    description: Full lint check (analyze + format)
+
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test:
+    run: flutter test --coverage --reporter compact
+    exec:
+      concurrency: 3
+      failFast: false
+    description: Run all tests with coverage
+
+  test:unit:
+    run: flutter test test/unit --reporter compact
+    exec:
+      concurrency: 4
+
+  test:widget:
+    run: flutter test test/widget --reporter compact
+    exec:
+      concurrency: 2
+
+  test:golden:
+    run: flutter test --tags golden
+    exec:
+      concurrency: 1   # Serial — deterministic rendering
+    description: Golden tests (run on Linux CI only)
+
+  test:update-goldens:
+    run: flutter test --tags golden --update-goldens
+    exec:
+      concurrency: 1
+
+  test:e2e:
+    run: patrol test --target integration_test
+    exec:
+      concurrency: 1
+    packageFilters:
+      scope: '*_app'   # Only app packages have E2E tests
+    description: Run Patrol E2E tests (requires emulator)
+
+  # ── Code generation ────────────────────────────────────────────────────────
+  gen:
+    run: dart run build_runner build --delete-conflicting-outputs
+    exec:
+      concurrency: 1   # Serial — avoid file conflicts
+    description: Run all code generators (Riverpod, Drift, Freezed, slang)
+
+  gen:watch:
+    run: dart run build_runner watch --delete-conflicting-outputs
+    exec:
+      concurrency: 1
+
+  gen:clean:
+    run: |
+      find . -name "*.g.dart" -not -path "*/.dart_tool/*" -delete
+      find . -name "*.freezed.dart" -not -path "*/.dart_tool/*" -delete
+      melos run gen
+    description: Delete generated files and regenerate
+
+  # ── Builds ─────────────────────────────────────────────────────────────────
+  build:android:debug:
+    run: >
+      flutter build apk --debug
+      -t lib/main_dev.dart
+      --flavor dev
+    packageFilters:
+      scope: 'consumer_app'
+
+  build:android:staging:
+    run: >
+      flutter build apk --release
+      -t lib/main_staging.dart
+      --flavor staging
+      --obfuscate
+      --split-debug-info=build/symbols/
+      --dart-define=ENV=staging
+      --build-number=$BUILD_NUMBER
+    packageFilters:
+      scope: 'consumer_app'
+
+  build:android:release:
+    run: >
+      flutter build appbundle --release
+      -t lib/main.dart
+      --flavor prod
+      --obfuscate
+      --split-debug-info=build/symbols/
+      --dart-define=ENV=production
+      --build-number=$BUILD_NUMBER
+    packageFilters:
+      scope: 'consumer_app'
+
+  build:ios:release:
+    run: >
+      flutter build ios --release
+      --no-codesign
+      --obfuscate
+      --split-debug-info=build/symbols/
+      --dart-define=ENV=production
+    packageFilters:
+      scope: 'consumer_app'
+
+  # ── Dependency management ───────────────────────────────────────────────────
+  deps:check:
+    run: flutter pub outdated
+    exec:
+      concurrency: 5
+    description: Check for outdated dependencies across all packages
+
+  deps:upgrade:
+    run: flutter pub upgrade --major-versions
+    exec:
+      concurrency: 1
+    description: Upgrade all dependencies (careful — may break)
+
+  # ── Versioning ──────────────────────────────────────────────────────────────
+  version:
+    run: melos version
+    description: Bump versions from conventional commits
+
+  publish:dry:
+    run: dart pub publish --dry-run
+    exec:
+      concurrency: 1
+    description: Dry-run publish (validate all packages)
+
+  # ── CI shorthand ────────────────────────────────────────────────────────────
+  ci:
+    run: melos run lint && melos run test && melos run test:golden
+    description: Full CI pipeline (analyze + test + golden)
+
+# ──────────────────────────────────────────────────────────────────────────
+command:
+  bootstrap:
+    # Run flutter pub get in all packages concurrently
+    runPubGetInParallel: true
+
+  version:
+    # Use conventional commits for version bumping
+    message: "chore(release): publish packages\n\n{new_package_versions}"
+    branch: main
+    workspaceChangelog: true
+    linkToCommits: true
+    updateGitTagRefs: true
+    includeScopes: true
+    includeCommitId: true
+```
